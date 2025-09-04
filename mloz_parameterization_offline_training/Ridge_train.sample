@@ -1,0 +1,105 @@
+# This script train a ridge regression model 
+# between single column temp at (t-1) and single point ozone at t.
+# generate y_scaler for ozone standardization
+#%%
+import xarray as xr
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import Ridge
+from sklearn.model_selection import GridSearchCV
+# import cftime
+import numpy as np
+import os
+from sklearn.model_selection import KFold
+import joblib 
+import pickle
+import time
+start_time = time.time()
+
+# LON_i=10
+# NYEAR=2
+
+lon_batch = LON_BATCH # 0-47
+nt = NYEAR*360 # training set length
+lat_int = 1
+
+print("=================== Training on lon_batch={} ===================".format(lon_batch))
+
+#%%
+path = '/hkfs/work/workspace/scratch/ou4895-ukesm/data/'
+ozone_file = xr.open_dataset(path+'data_ozone_piCTRL_1962_2034_UKESM.nc',decode_times=False).isel(longitude=np.arange(lon_batch*4,(lon_batch+1)*4,1))
+ozone_train = ozone_file['field2101'][1:nt,:76,::lat_int,:] # 1960-1-2 to 1999-12-30
+temp_file = xr.open_dataset(path+'data_temp_piCTRL_1962_2034_UKESM.nc',decode_times=False).isel(longitude=np.arange(lon_batch*4,(lon_batch+1)*4,1))
+temp_train=temp_file['temp'][:nt-1,:76,::lat_int,:] # 1960-1-1 to 1999-12-29
+
+_, n_h, n_lat, n_proma = ozone_train.shape
+X_train = temp_train.values.reshape((nt-1,-1))
+Y_train = ozone_train.values.reshape((nt-1,-1))
+
+scaler_x = StandardScaler().fit(X_train)
+X_train_std = scaler_x.transform(X_train).reshape(nt-1,n_h,n_lat,n_proma)
+# joblib.dump(scaler_y,'Scaler_y_piCTRL_lon'+str(lon_i)+'.pkl')
+pickle.dump(scaler_x, open('Scaler_x_piCTRL_lon_batch'+str(lon_batch)+'.pkl', 'wb'))
+
+scaler_y = StandardScaler().fit(Y_train)
+Y_train_std = scaler_y.transform(Y_train).reshape(nt-1,n_h,n_lat,n_proma)
+# joblib.dump(scaler_y,'Scaler_y_piCTRL_lon'+str(lon_i)+'.pkl')
+pickle.dump(scaler_y, open('Scaler_y_piCTRL_lon_batch'+str(lon_batch)+'.pkl', 'wb'))
+
+print("--- %s seconds ---" % (time.time() - start_time))
+
+#%%
+# alpha_i = [1e-12,1e-11,1e-10,1e-9,1e-8,3e-8,1e-7,3e-7,1e-6,3e-6,1e-5,3e-5,1e-4,3e-4,0.001,0.003,0.01,0.03,0.1,0.3,1,3,10,30,100,300,1000,3000,1e4,3e4,1e5,3e5,1e6,3e6,1e7,3e7,1e8]
+alpha_i = [0.001,0.003,0.01,0.03,0.1,0.3,1,3,10,30,100,300,1000,3000,1e4,3e4,1e5,3e5,1e6,1e7] # max 3e4
+# alpha_polar = [1000,3000,10000,30000,1e5,3e5] # max 3e4
+regressors_col = {}
+parameters = {
+    'alpha': alpha_i,
+    'fit_intercept': [False],
+    'max_iter':[1000],
+    # 'tol': [1e-2,1e-3,1e-4,1e-5,1e-6],
+    'random_state':[100] #If int, random_state is the seed used by the random number generator.
+     # If None, the random number generator is the RandomState instance used by np.random. 
+             }
+# parameters_polar = {
+#     'alpha': alpha_polar,
+#     'fit_intercept': [False],
+#     'max_iter':[100],
+#     # 'tol': [1e-2,1e-3,1e-4,1e-5,1e-6],
+#     'random_state':[100] #If int, random_state is the seed used by the random number generator.
+#      # If None, the random number generator is the RandomState instance used by np.random. 
+#              }
+
+# from sklearn.model_selection import KFold
+# cv_obj = KFold(n_splits=4) # KFold(n_splits=4) # Each fold is then used once as a validation while the k - 1 remaining folds form the training set.
+from sklearn.model_selection import TimeSeriesSplit
+cv_obj = TimeSeriesSplit(n_splits=3)
+
+for i in range(0,n_proma):
+    for k in range(0,n_h):
+        for j in range(0,n_lat): 
+            # if j<24 or j>= 120: # polar
+            regr_ij = GridSearchCV(Ridge(),parameters,cv=cv_obj,n_jobs=-1,refit=True)
+            # else: # non-polar region
+            #     regr_ij = GridSearchCV(Ridge(),parameters,cv=cv_obj,n_jobs=-1,refit=True)
+            regr_ij.fit(X_train_std[:,:,j,i], Y_train_std[:,k,j,i]) # Single column -> single point
+            regressors_col['lon_'+str(i)+'_lat'+str(j)+'_level'+str(k)] = regr_ij.best_estimator_
+
+# import multiprocessing as mp
+# def process(i,j):
+#     regr_ij = GridSearchCV(Ridge(),parameters,cv=cv_obj,n_jobs=1,refit=True)
+#     regr_ij.fit(X_train[:,:,j], Y_train_std[:,i,j])
+#     regressors_col['level'+str(i)+'_lat'+str(j)] = regr_ij.best_estimator_
+#     # print('regr_ij.best_estimator_.alpha=',regr_ij.best_estimator_.alpha)
+# pool = mp.Pool()
+# [[pool.apply_async(process, args=(levi,lati,)) for lati in range(n_lat)] for levi in range(n_h)] #n_h
+# #apply_async: 各个进程执行顺序不确定，当前进程不阻塞，子进程异步执行
+# pool.close() # close the process pool
+# pool.join() # wait for all tasks to finish
+
+outputfile='RidgeRegressor_piCTRL_lon_batch'+str(lon_batch)+'.pkl'
+pickle.dump(regressors_col, open(outputfile, 'wb'))
+# joblib.dump(regressors_col,open(outputfile, 'wb'))
+
+print("---END %s seconds ---" % (time.time() - start_time))
+
+# %%
