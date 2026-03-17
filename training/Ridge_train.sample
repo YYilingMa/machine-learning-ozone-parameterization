@@ -1,0 +1,77 @@
+# This script train ridge regression model on a batch of longitudes (lon_batch)
+# between single column temp at (t-1) and single point ozone at t.
+# Could be apply to both piCTRL and 4xCO2
+# Save ridge coefficients
+# Save scalings for temp&ozone normalization
+#%%
+import xarray as xr
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import Ridge
+from sklearn.model_selection import GridSearchCV
+import numpy as np
+import os
+from sklearn.model_selection import KFold
+import joblib 
+import pickle
+import time
+start_time = time.time()
+
+
+# 192 longitudes are divided into 48 batches of 4 to enable parallel HPC training
+lon_batch = LON_BATCH # 0-47
+nt = NYEAR*360 # training set length (UKESM has only 360 days each year)
+lat_int = 1
+
+print("=================== Training on lon_batch={} ===================".format(lon_batch))
+
+#%%
+path = '/hkfs/work/workspace/scratch/ou4895-ukesm/data/'
+ozone_file = xr.open_dataset(path+'fullChem_ozone_piCTRL_1962_1999_UKESM.nc',decode_times=False).isel(longitude=np.arange(lon_batch*4,(lon_batch+1)*4,1))
+ozone_train = ozone_file['field2101'][1:nt,:76,::lat_int,:]   # ozone at time t
+temp_file = xr.open_dataset(path+'fullChem_temp_piCTRL_1962_1999_UKESM.nc',decode_times=False).isel(longitude=np.arange(lon_batch*4,(lon_batch+1)*4,1))
+temp_train=temp_file['temp'][:nt-1,:76,::lat_int,:]           # temperature at time t-1 (one-step lag)
+
+_, n_h, n_lat, n_proma = ozone_train.shape
+X_train = temp_train.values.reshape((nt-1,-1))
+Y_train = ozone_train.values.reshape((nt-1,-1))
+
+scaler_x = StandardScaler().fit(X_train)
+X_train_std = scaler_x.transform(X_train).reshape(nt-1,n_h,n_lat,n_proma)
+pickle.dump(scaler_x, open('Scaler_x_piCTRL_lon_batch'+str(lon_batch)+'.pkl', 'wb'))
+
+scaler_y = StandardScaler().fit(Y_train)
+Y_train_std = scaler_y.transform(Y_train).reshape(nt-1,n_h,n_lat,n_proma)
+pickle.dump(scaler_y, open('Scaler_y_piCTRL_lon_batch'+str(lon_batch)+'.pkl', 'wb'))
+
+print("--- %s seconds ---" % (time.time() - start_time))
+
+#%%
+# alpha_i = [1e-12,1e-11,1e-10,1e-9,1e-8,3e-8,1e-7,3e-7,1e-6,3e-6,1e-5,3e-5,1e-4,3e-4,0.001,0.003,0.01,0.03,0.1,0.3,1,3,10,30,100,300,1000,3000,1e4,3e4,1e5,3e5,1e6,3e6,1e7,3e7,1e8]
+alpha_i = [0.001,0.003,0.01,0.03,0.1,0.3,1,3,10,30,100,300,1000,3000,1e4,3e4,1e5,3e5,1e6,1e7]
+regressors_col = {}
+parameters = {
+    'alpha': alpha_i,
+    'fit_intercept': [False],  # Intercept excluded because both inputs and outputs are StandardScaler-normalized (zero mean)
+    'max_iter':[1000],
+    'random_state':[100]
+             }
+
+# from sklearn.model_selection import KFold
+# cv_obj = KFold(n_splits=4) # KFold(n_splits=4)
+from sklearn.model_selection import TimeSeriesSplit
+# TimeSeriesSplit preserves temporal ordering, preventing data leakage from future to past
+cv_obj = TimeSeriesSplit(n_splits=3)
+
+for i in range(0,n_proma):
+    for k in range(0,n_h):
+        for j in range(0,n_lat): 
+            regr_ij = GridSearchCV(Ridge(),parameters,cv=cv_obj,n_jobs=-1,refit=True)
+            regr_ij.fit(X_train_std[:,:,j,i], Y_train_std[:,k,j,i]) # Single column -> single point
+            regressors_col['lon_'+str(i)+'_lat'+str(j)+'_level'+str(k)] = regr_ij.best_estimator_
+
+outputfile='RidgeRegressor_piCTRL_lon_batch'+str(lon_batch)+'.pkl'
+pickle.dump(regressors_col, open(outputfile, 'wb'))
+
+print("---END %s seconds ---" % (time.time() - start_time))
+
+# %%
