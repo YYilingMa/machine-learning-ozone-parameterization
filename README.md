@@ -4,7 +4,7 @@ Code for the paper **"mloz: A Highly Efficient Machine Learning-Based Ozone Para
 
 **Contributors:** 
 Yiling Ma — yiling.ma@kit.edu — Karlsruhe Institute of Technology (KIT), 
-Luke Abraham - University of Cambridge
+Luke Nathan Abraham - University of Cambridge
 
 ## Overview
 
@@ -63,7 +63,7 @@ Training uses UKESM piCTRL and 4×CO₂ full-chemistry simulations (1961–1999)
 
 A coarse-grained (60°×10°) version of the training data (downsampled due to storage constraints), along with the online ozone predictions from mloz in UKESM and ICON and the full-resolution mloz coefficients, is archived at:
 
-> Ma, Y. (2026). Datasets for mloz: A Highly Efficient Machine Learning-Based Ozone Parameterization for Climate Sensitivity Simulations [Data set]. Zenodo. https://doi.org/10.5281/zenodo.19056390
+> Ma, Y., & Abraham, N. L. (2026). Datasets for mloz: A Highly Efficient Machine Learning-Based Ozone Parameterization for Climate Sensitivity Simulations [Data set]. Zenodo. https://doi.org/10.5281/zenodo.19056391
 
 The original full-resolution training data and online ozone predictions are available from the author upon request.
 
@@ -81,4 +81,4 @@ Code in this repository is licensed under the **Creative Commons Attribution 4.0
 
 ## Citation
 
-Ma, Y. (2026). Code for mloz: A Highly Efficient Machine Learning-Based Ozone Parameterization for Climate Sensitivity Simulations. Zenodo. https://doi.org/10.5281/zenodo.19076780
+Ma, Y., & Abraham, N. L. (2026). Code for mloz: A Highly Efficient Machine Learning-Based Ozone Parameterization for Climate Sensitivity Simulations. Zenodo. https://doi.org/10.5281/zenodo.19076781
