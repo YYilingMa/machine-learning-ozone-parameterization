@@ -3,7 +3,7 @@
 Code for the paper **"mloz: A Highly Efficient Machine Learning-Based Ozone Parameterization for Climate Sensitivity Simulations"**, published on the *Journal of Advances in Modeling Earth Systems* (JAMES).
 
 **Contributors:** 
-Yiling Ma — yiling.ma@kit.edu — Karlsruhe Institute of Technology (KIT)
+Yiling Ma — yiling.ma@kit.edu — Karlsruhe Institute of Technology (KIT), 
 Luke Abraham - University of Cambridge
 
 ## Overview
